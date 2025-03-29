@@ -13,6 +13,11 @@
 # testing
 /coverage
 
+# env.local
+echo ".env.local" >> .gitignore
+git add .gitignore
+git commit -m "Ignore env.local"
+
 # next.js
 /.next/
 /out/

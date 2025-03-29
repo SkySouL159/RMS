@@ -1,17 +1,12 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
-    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./app/**/*.{js,jsx,ts,tsx,mdx}", // ✅ Next.js 15 App Router
+    "./pages/**/*.{js,jsx,ts,tsx,mdx}", // ✅ Pages Router (if used)
+    "./components/**/*.{js,jsx,ts,tsx,mdx}", // ✅ Components
   ],
   theme: {
-    extend: {
-      colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
-      },
-    },
+    extend: {},
   },
   plugins: [],
 };
