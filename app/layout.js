@@ -1,6 +1,15 @@
 import "@/app/globals.css"; // ✅ Correct import for App Router
 import Tab from "@/Components/Tab";
 
+export const metadata = {
+  title: "RMS",
+  description: "Room management system",
+  icons: {
+    icon: "/favicon.ico", // ✅ Favicon
+    apple: "/favicon.ico", // Optional for Apple devices
+  },
+};
+
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
