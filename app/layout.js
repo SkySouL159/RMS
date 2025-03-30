@@ -1,5 +1,6 @@
 import "@/app/globals.css"; // ✅ Correct import for App Router
 import Tab from "@/Components/Tab";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata = {
   title: "RMS",
@@ -16,6 +17,7 @@ export default function RootLayout({ children }) {
       <body>
         <Tab />
         {children}
+        <SpeedInsights />
       </body>
     </html>
   );
