@@ -34,75 +34,52 @@ const Light = () => {
   const [editingCell, setEditingCell] = useState(null);
   const editRef = useRef(null);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lightbill`, {
-      method: "GET",
-      headers: {
-        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-        "Content-Type": "application/json",
-      },
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch data");
-        return res.json();
-      })
-      .then((fetchedData) => {
-        if (isMounted) {
-          const updatedData = fetchedData
-            .map((row) => ({
-              ...row,
-              point: (
-                row.current_reading - parseFloat(row.previous_reading)
-              ).toFixed(2),
-            }))
-            .sort((a, b) => a.room_number - b.room_number); // Sort by room_number
-
-          setData(updatedData);
-          setLoading(false);
+  const fetchData = async () => {
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lightbill`,
+        {
+          headers: {
+            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+          },
         }
-      })
-      .catch((err) => {
-        if (isMounted) {
-          setError(err.message);
-          setLoading(false);
-        }
-      });
+      );
+      if (!res.ok) throw new Error("Failed to fetch data");
 
-    return () => {
-      isMounted = false;
-    };
-  }, []); // ✅ Use empty dependency array to fetch once
-  //* 👈 This ensures re-fetching when `data` changes
+      const fetchedData = await res.json();
+      const updatedData = fetchedData
+        .map((row) => ({
+          ...row,
+          point: (
+            row.current_reading - parseFloat(row.previous_reading)
+          ).toFixed(2),
+        }))
+        .sort((a, b) => a.room_number - b.room_number);
 
-  const handleDoubleClick = (id, column) => {
-    setEditingCell({ id, column });
-
-    setTimeout(() => {
-      if (editRef.current) {
-        const range = document.createRange();
-        const selection = window.getSelection();
-        range.selectNodeContents(editRef.current);
-        range.collapse(false);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-    }, 0);
+      setData(updatedData);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleBlur = (id, column, newValue) => {
-    if (!data) return;
-    const oldValue = data.find((row) => row.id === id)[column];
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-    if (newValue.trim() !== oldValue.toString().trim()) {
-      const updatedRow = {
-        ...data.find((row) => row.id === id),
-        [column]: newValue,
-      };
+  const handleDoubleClick = (id, column) => {
+    if (!nonEditableColumns.has(column)) setEditingCell({ id, column });
+    setTimeout(() => editRef.current?.focus(), 0);
+  };
 
-      fetch(
+  const handleBlur = async (id, column, newValue) => {
+    const row = data.find((row) => row.id === id);
+    if (!row || newValue.trim() === row[column].toString().trim()) return;
+
+    try {
+      const res = await fetch(
         `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lightbill?id=eq.${id}`,
         {
           method: "PATCH",
@@ -110,45 +87,40 @@ const Light = () => {
             "Content-Type": "application/json",
             apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
             Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-            Prefer: "return=representation", // Ensures updated data is returned
+            Prefer: "return=representation",
           },
           body: JSON.stringify({ [column]: newValue }),
         }
-      )
-        .then((res) => {
-          if (!res.ok) throw new Error("Failed to update data");
-          return res.json(); // Supabase returns updated data
-        })
-        .then((updatedData) => {
-          setEditingCell(null);
-          setData((prevData) =>
-            prevData.map((row) =>
-              row.id === id
-                ? {
-                    ...updatedData[0], // Supabase returns an array of updated data
-                    point: (
-                      updatedData[0].current_reading -
-                      parseFloat(updatedData[0].previous_reading)
-                    ).toFixed(0),
-                  }
-                : row
-            )
-          );
-        })
-        .catch((err) => alert(`Error updating: ${err.message}`));
-    }
+      );
 
-    setEditingCell(null);
+      if (!res.ok) throw new Error("Failed to update data");
+      const updatedData = await res.json();
+      setData((prevData) =>
+        prevData.map((row) =>
+          row.id === id
+            ? {
+                ...updatedData[0],
+                point: (
+                  updatedData[0].current_reading -
+                  parseFloat(updatedData[0].previous_reading)
+                ).toFixed(0),
+              }
+            : row
+        )
+      );
+    } catch (err) {
+      alert(`Error updating: ${err.message}`);
+    } finally {
+      setEditingCell(null);
+    }
   };
 
-  // * calculate total bill amount and total point
   const totalBill = data.reduce(
-    (sum, row) => sum + parseFloat(row.bill_amount || 0),
+    (sum, row) => sum + (parseFloat(row.bill_amount) || 0),
     0
   );
-
   const totalPoints = data.reduce(
-    (sum, row) => sum + parseFloat(row.point || 0),
+    (sum, row) => sum + (parseFloat(row.point) || 0),
     0
   );
 
@@ -160,21 +132,17 @@ const Light = () => {
       <div className="text-center text-2xl font-bold text-green-300 mb-4">
         Light Bills
       </div>
-      <div className="overflow-x-auto px-2 flex flex-wrap justify-center">
-        <table className="table-auto border-collapse border border-gray-800 md:w-full lg:w-full  select-none">
+      <div className="overflow-x-auto px-2 flex justify-center">
+        <table className="table-auto border-collapse border border-gray-800 w-full">
           <thead className="bg-green-300">
             <tr>
               {columns.map((column) => (
-                <th
-                  key={column}
-                  className="border border-gray-800 text-center select-none md:p-2"
-                >
+                <th key={column} className="border border-gray-800 p-2">
                   {columnHeaders[column]}
                 </th>
               ))}
             </tr>
           </thead>
-
           <tbody>
             {data.length > 0 ? (
               data.map((row) => (
@@ -182,36 +150,30 @@ const Light = () => {
                   {columns.map((column) => (
                     <td
                       key={`${row.id}-${column}`}
-                      className={`border border-gray-800 text-center select-none p-2 ${
-                        column === "previous_reading" ? "text-red-500" : ""
-                      } ${
-                        column === "current_reading" ? "text-green-500" : ""
+                      className={`border border-gray-800 p-2 text-center ${
+                        column === "previous_reading"
+                          ? "text-red-500"
+                          : column === "current_reading"
+                          ? "text-green-500"
+                          : ""
                       }`}
                       contentEditable={
-                        !nonEditableColumns.has(column) &&
                         editingCell?.id === row.id &&
-                        editingCell?.column === column
+                        editingCell?.column === column &&
+                        !nonEditableColumns.has(column)
                       }
-                      suppressContentEditableWarning={true}
+                      suppressContentEditableWarning
                       ref={
                         editingCell?.id === row.id &&
                         editingCell?.column === column
                           ? editRef
                           : null
                       }
-                      onDoubleClick={() => {
-                        if (!nonEditableColumns.has(column)) {
-                          handleDoubleClick(row.id, column);
-                        }
-                      }}
-                      onBlur={(e) => {
-                        if (!nonEditableColumns.has(column)) {
-                          handleBlur(row.id, column, e.target.innerText);
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") e.target.blur();
-                      }}
+                      onDoubleClick={() => handleDoubleClick(row.id, column)}
+                      onBlur={(e) =>
+                        handleBlur(row.id, column, e.target.innerText)
+                      }
+                      onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
                     >
                       {row[column]}
                     </td>
@@ -220,26 +182,23 @@ const Light = () => {
               ))
             ) : (
               <tr>
-                <td
-                  colSpan={columns.length}
-                  className="text-center text-gray-500 p-4"
-                >
+                <td colSpan={columns.length} className="p-4 text-center">
                   No data available
                 </td>
               </tr>
             )}
           </tbody>
         </table>
-        <div className="mt-4 text-lg font-bold text-center text-green-300">
-          <p>
-            Total Bill:{" "}
-            <span className="text-white">₹{totalBill.toFixed(0)}</span>
-          </p>
-          <p>
-            Total Points:{" "}
-            <span className="text-white">{totalPoints.toFixed(0)}</span>
-          </p>
-        </div>
+      </div>
+      <div className="mt-4 text-lg font-bold text-center text-green-300">
+        <p>
+          Total Bill:{" "}
+          <span className="text-white">₹{totalBill.toFixed(0)}</span>
+        </p>
+        <p>
+          Total Points:{" "}
+          <span className="text-white">{totalPoints.toFixed(0)}</span>
+        </p>
       </div>
     </main>
   );
