@@ -1,6 +1,12 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 const columns = [
   "room_number",
@@ -67,6 +73,23 @@ const Light = () => {
 
   useEffect(() => {
     fetchData();
+
+    // Realtime Subscription
+    const channel = supabase
+      .channel("lightbill")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "lightbill" },
+        (payload) => {
+          console.log("Realtime update:", payload);
+          fetchData(); // Refresh data on change
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel); // Cleanup on unmount
+    };
   }, []);
 
   const handleDoubleClick = (id, column) => {
@@ -102,7 +125,7 @@ const Light = () => {
                 ...updatedData[0],
                 point: (
                   updatedData[0].current_reading -
-                  parseFloat(updatedData[0].previous_reading)
+                  updatedData[0].previous_reading
                 ).toFixed(0),
               }
             : row
@@ -189,16 +212,6 @@ const Light = () => {
             )}
           </tbody>
         </table>
-      </div>
-      <div className="mt-4 text-lg font-bold text-center text-green-300">
-        <p>
-          Total Bill:{" "}
-          <span className="text-white">₹{totalBill.toFixed(0)}</span>
-        </p>
-        <p>
-          Total Points:{" "}
-          <span className="text-white">{totalPoints.toFixed(0)}</span>
-        </p>
       </div>
     </main>
   );
