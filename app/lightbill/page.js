@@ -31,6 +31,7 @@ const nonEditableColumns = new Set([
   "month",
   "point",
   "bill_amount",
+  "previous_reading",
 ]);
 
 const Light = () => {
@@ -51,19 +52,29 @@ const Light = () => {
           },
         }
       );
+
       if (!res.ok) throw new Error("Failed to fetch data");
 
       const fetchedData = await res.json();
-      const updatedData = fetchedData
+
+      // Ensure every row is valid and has the necessary fields
+      const validData = fetchedData
+        .filter(
+          (row) =>
+            row &&
+            row.current_reading !== undefined &&
+            row.previous_reading !== undefined
+        )
         .map((row) => ({
           ...row,
           point: (
-            row.current_reading - parseFloat(row.previous_reading)
+            parseFloat(row.current_reading || 0) -
+            parseFloat(row.previous_reading || 0)
           ).toFixed(2),
         }))
         .sort((a, b) => a.room_number - b.room_number);
 
-      setData(updatedData);
+      setData(validData);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -74,7 +85,6 @@ const Light = () => {
   useEffect(() => {
     fetchData();
 
-    // Realtime Subscription
     const channel = supabase
       .channel("lightbill")
       .on(
@@ -82,13 +92,28 @@ const Light = () => {
         { event: "*", schema: "public", table: "lightbill" },
         (payload) => {
           console.log("Realtime update:", payload);
-          fetchData(); // Refresh data on change
+
+          if (!payload.new || payload.new.current_reading === undefined) return; // Skip invalid data
+
+          setData((prevData) =>
+            prevData.map((row) =>
+              row.id === payload.new.id
+                ? {
+                    ...payload.new,
+                    point: (
+                      parseFloat(payload.new.current_reading || 0) -
+                      parseFloat(payload.new.previous_reading || 0)
+                    ).toFixed(2),
+                  }
+                : row
+            )
+          );
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel); // Cleanup on unmount
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -99,53 +124,68 @@ const Light = () => {
 
   const handleBlur = async (id, column, newValue) => {
     const row = data.find((row) => row.id === id);
-    if (!row || newValue.trim() === row[column].toString().trim()) return;
+    if (!row || newValue.trim() === row[column]?.toString().trim()) return;
 
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lightbill?id=eq.${id}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-            Prefer: "return=representation",
-          },
-          body: JSON.stringify({ [column]: newValue }),
-        }
-      );
+      // 🔍 First, check if the row exists
+      const checkUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lightbill?id=eq.${id}`;
+      const checkRes = await fetch(checkUrl, {
+        headers: {
+          "Content-Type": "application/json",
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+        },
+      });
+      const existingRow = await checkRes.json();
+      console.log("Row exists check:", existingRow);
 
-      if (!res.ok) throw new Error("Failed to update data");
-      const updatedData = await res.json();
+      if (!existingRow.length) {
+        alert("Row not found! The update cannot proceed.");
+        return;
+      }
+
+      // 🔄 Now, try to update
+      const updateUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/lightbill?id=eq.${id}`;
+      const updateRes = await fetch(updateUrl, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify({ [column]: newValue }),
+      });
+
+      const updatedData = await updateRes.json();
+      console.log("Supabase update response:", updatedData);
+
+      if (!updateRes.ok || !updatedData.length) {
+        throw new Error(
+          `Invalid response from server: ${JSON.stringify(updatedData)}`
+        );
+      }
+
       setData((prevData) =>
         prevData.map((row) =>
           row.id === id
             ? {
                 ...updatedData[0],
                 point: (
-                  updatedData[0].current_reading -
-                  updatedData[0].previous_reading
-                ).toFixed(0),
+                  (parseFloat(updatedData[0]?.current_reading) || 0) -
+                  (parseFloat(updatedData[0]?.previous_reading) || 0)
+                ).toFixed(2),
               }
             : row
         )
       );
     } catch (err) {
+      console.error("Error updating:", err);
       alert(`Error updating: ${err.message}`);
     } finally {
       setEditingCell(null);
     }
   };
-
-  const totalBill = data.reduce(
-    (sum, row) => sum + (parseFloat(row.bill_amount) || 0),
-    0
-  );
-  const totalPoints = data.reduce(
-    (sum, row) => sum + (parseFloat(row.point) || 0),
-    0
-  );
 
   if (loading) return <p>Loading...</p>;
   if (error) return <p className="text-red-500">Error: {error}</p>;
