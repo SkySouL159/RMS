@@ -13,7 +13,7 @@ const columns = [
   "month",
   "previous_reading",
   "current_reading",
-  "point",
+  "amount",
   "bill_amount",
 ];
 
@@ -22,7 +22,7 @@ const columnHeaders = {
   month: "Month",
   previous_reading: "Pre",
   current_reading: "Curr",
-  point: "Point",
+  amount: "amount",
   bill_amount: "Bill",
 };
 
@@ -30,7 +30,7 @@ const nonEditableColumns = new Set([
   "room_number",
   "month",
   "point",
-  "bill_amount",
+  "amount",
   "previous_reading",
 ]);
 
@@ -38,6 +38,7 @@ const Light = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
   const [editingCell, setEditingCell] = useState(null);
   const editRef = useRef(null);
 
@@ -214,10 +215,10 @@ const Light = () => {
                     <td
                       key={`${row.id}-${column}`}
                       className={`border border-gray-800 p-2 text-center ${
-                        column === "previous_reading"
-                          ? "text-red-500"
-                          : column === "current_reading"
+                        column === "current_reading"
                           ? "text-green-500"
+                          : column === "bill_amount"
+                          ? "text-blue-500"
                           : ""
                       }`}
                       contentEditable={
