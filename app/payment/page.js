@@ -177,7 +177,16 @@ const Payment = () => {
             </tr>
           </thead>
           <tbody>
-            {data.length > 0 ? (
+            {loading ? (
+              <tr>
+                <td
+                  colSpan={columns.length}
+                  className="text-center text-gray-500 p-4"
+                >
+                  Loading...
+                </td>
+              </tr>
+            ) : data.length > 0 ? (
               data.map((row) => (
                 <tr key={row.id}>
                   {columns.map((column) => (
